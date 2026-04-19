@@ -21,26 +21,19 @@ export function CompoundInterestWidget() {
   // Core Investment State
   const [initialPrincipal, setInitialPrincipal] = useState<number>(10000);
   const [years, setYears] = useState<number>(30);
-  const [contributionYears, setContributionYears] = useState<number>(30);
+  
+  // Use a state for manual override, but calculate current effective contribution years
+  const [manualContributionYears, setManualContributionYears] = useState<number | null>(null);
+  const contributionYears = manualContributionYears !== null ? Math.min(years, manualContributionYears) : years;
+
   const [returnRate, setReturnRate] = useState<number>(7);
-  const [baseContribution, setBaseContribution] = useState<number>(stats.totalBalance);
+  
+  // Use a state for manual override, but sync with stats if not edited
+  const [manualBaseContribution, setManualBaseContribution] = useState<number | null>(null);
+  const baseContribution = manualBaseContribution !== null ? manualBaseContribution : Math.round(stats.totalBalance * 100) / 100;
+
   const [frequency, setFrequency] = useState<Frequency>('monthly');
-  const [hasManuallyEdited, setHasManuallyEdited] = useState(false);
   const [yearlyOverrides, setYearlyOverrides] = useState<Record<number, number>>({});
-
-  // Sync contribution years if it matches total years
-  useEffect(() => {
-    if (contributionYears > years) {
-      setContributionYears(years);
-    }
-  }, [years, contributionYears]);
-
-  // Sync with real potential on initial load or if user hasn't touched it
-  useEffect(() => {
-    if (!hasManuallyEdited) {
-      setBaseContribution(Math.round(stats.totalBalance * 100) / 100);
-    }
-  }, [stats.totalBalance, hasManuallyEdited]);
 
   // FIRE State
   const [targetAnnualSpend, setTargetAnnualSpend] = useState<number>(100000);
@@ -209,7 +202,7 @@ export function CompoundInterestWidget() {
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 pl-9 pr-3 text-slate-200 focus:outline-none focus:border-indigo-500"
                   value={contributionYears === 0 ? '' : contributionYears}
                   placeholder="0"
-                  onChange={(e) => setContributionYears(Math.min(years, Math.max(0, parseFloat(e.target.value) || 0)))}
+                  onChange={(e) => setManualContributionYears(Math.min(years, Math.max(0, parseFloat(e.target.value) || 0)))}
                 />
               </div>
               <p className="text-[10px] text-slate-500 mt-1 italic">Stop contributions after year {contributionYears}</p>
@@ -226,8 +219,7 @@ export function CompoundInterestWidget() {
                     value={baseContribution === 0 ? '' : baseContribution}
                     placeholder="0"
                     onChange={(e) => {
-                      setBaseContribution(parseFloat(e.target.value) || 0);
-                      setHasManuallyEdited(true);
+                      setManualBaseContribution(parseFloat(e.target.value) || 0);
                     }}
                   />
                 </div>
@@ -371,7 +363,7 @@ export function CompoundInterestWidget() {
                 <Tooltip 
                   contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '0.75rem', color: '#f8fafc' }}
                   itemStyle={{ fontSize: '0.875rem', fontWeight: 600 }}
-                  formatter={(value: number) => formatCurrency(value)}
+                  formatter={(value: any) => formatCurrency(Number(value || 0))}
                   labelFormatter={(label) => `Year ${label}`}
                 />
                 <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '20px' }} />

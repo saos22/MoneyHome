@@ -13,7 +13,8 @@ const DISCRETIONARY_CATEGORIES = [
   'subscriptions', 
   'takeout', 
   'travel', 
-  'unnecessary'
+  'unnecessary',
+  'side hustle' 
 ];
 
 const DISCRETIONARY_KEYWORDS = [
