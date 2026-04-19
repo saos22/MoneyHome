@@ -14,7 +14,7 @@ function DashboardContent() {
 
   return (
     <div className="min-h-screen bg-slate-950 p-6 md:p-12 text-slate-100 selection:bg-indigo-500/30">
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-[1600px] mx-auto w-full">
         <header className="mb-12 flex justify-between items-end">
           <div>
             <h1 className="text-4xl font-black text-slate-50 tracking-tight flex items-center gap-3">
