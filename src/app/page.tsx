@@ -32,31 +32,32 @@ function DashboardContent() {
           </div>
         </header>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-          <StatCard title="Liquidity" value={stats.totalBalance} icon={Wallet} iconClassName="bg-indigo-500/10 text-indigo-400" />
-          <StatCard title="Revenue" value={stats.totalIncome} icon={TrendingUp} iconClassName="bg-emerald-500/10 text-emerald-400" />
-          <StatCard title="Burn" value={stats.totalExpenses} icon={TrendingDown} iconClassName="bg-rose-500/10 text-rose-400" />
-          <StatCard title="Efficiency" value={stats.savingsRate} icon={PiggyBank} isCurrency={false} iconClassName="bg-amber-500/10 text-amber-400" />
-        </div>
-
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-          <div className="xl:col-span-2">
-            <TransactionsTable />
+        <div className="space-y-8">
+          <CompoundInterestWidget />
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <StatCard title="Liquidity" value={stats.totalBalance} icon={Wallet} iconClassName="bg-indigo-500/10 text-indigo-400" />
+            <StatCard title="Revenue" value={stats.totalIncome} icon={TrendingUp} iconClassName="bg-emerald-500/10 text-emerald-400" />
+            <StatCard title="Burn" value={stats.totalExpenses} icon={TrendingDown} iconClassName="bg-rose-500/10 text-rose-400" />
+            <StatCard title="Efficiency" value={stats.savingsRate} icon={PiggyBank} isCurrency={false} iconClassName="bg-amber-500/10 text-amber-400" />
           </div>
-          <div className="xl:col-span-1 space-y-6">
-            <SmartUploader />
-            <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800/50">
-              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Security Protocol</h4>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                All statement data is processed in a transient local state. Files are purged from temporary memory immediately following agentic parsing.
-              </p>
+
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+            <div className="xl:col-span-2">
+              <TransactionsTable />
+            </div>
+            <div className="xl:col-span-1 space-y-6">
+              <SmartUploader />
+              <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800/50">
+                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Security Protocol</h4>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  All statement data is processed in a transient local state. Files are purged from temporary memory immediately following agentic parsing.
+                </p>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="mt-8 space-y-8">
           <ExpenseOptimizationWidget />
-          <CompoundInterestWidget />
         </div>
       </div>
     </div>

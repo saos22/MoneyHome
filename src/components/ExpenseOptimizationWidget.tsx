@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect, useCallback, Suspense, useRef } from 'react';
+import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useFinancial } from '../context/FinancialContext';
 import { Transaction } from '../types';
 import { cn } from '../lib/utils';
@@ -22,13 +23,70 @@ const DISCRETIONARY_KEYWORDS = [
   'starbucks', 'cafe', 'bar', 'restaurant', 'cinema', 'game', 'steam', 'playstation'
 ];
 
-export function ExpenseOptimizationWidget() {
-  const { transactions } = useFinancial();
-  const [selectedCuts, setSelectedCuts] = useState<Set<string>>(new Set());
-  const [yearsToInvest, setYearsToInvest] = useState(10);
-  const [returnRate, setReturnRate] = useState(7);
-  const [customMonthly, setCustomMonthly] = useState<number>(0);
-  const [customOneTime, setCustomOneTime] = useState<number>(0);
+function ExpenseOptimizationContent() {
+  const { transactions, stats } = useFinancial();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Helper to update URL params with debounce
+  const updateQuery = useCallback((params: Record<string, string | number | boolean | null>) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+
+    timerRef.current = setTimeout(() => {
+      const current = new URLSearchParams(Array.from(searchParams.entries()));
+      let hasChanged = false;
+      
+      Object.entries(params).forEach(([key, value]) => {
+        const stringValue = (value === null || value === undefined || value === false || value === '' || value === 0) ? null : String(value);
+        if (current.get(key) !== stringValue) {
+          if (stringValue === null) {
+            current.delete(key);
+          } else {
+            current.set(key, stringValue);
+          }
+          hasChanged = true;
+        }
+      });
+
+      if (hasChanged) {
+        const query = current.toString();
+        const url = query ? `${pathname}?${query}` : pathname;
+        router.replace(url, { scroll: false });
+      }
+    }, 500);
+  }, [searchParams, router, pathname]);
+
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  const [selectedCuts, setSelectedCuts] = useState<Set<string>>(() => {
+    const cuts = searchParams.get('cuts');
+    return cuts ? new Set(cuts.split(',')) : new Set();
+  });
+  const [yearsToInvest, setYearsToInvest] = useState(() => Number(searchParams.get('ey')) || 10);
+  const [returnRate, setReturnRate] = useState(() => {
+    const val = searchParams.get('er');
+    return val !== null ? Number(val) : 7;
+  });
+  const [customMonthly, setCustomMonthly] = useState(() => Number(searchParams.get('cm')) || 0);
+  const [customOneTime, setCustomOneTime] = useState(() => Number(searchParams.get('cot')) || 0);
+
+  // Sync state changes to URL
+  useEffect(() => {
+    updateQuery({
+      cuts: selectedCuts.size > 0 ? Array.from(selectedCuts).join(',') : null,
+      ey: yearsToInvest,
+      er: returnRate,
+      cm: customMonthly,
+      cot: customOneTime
+    });
+  }, [selectedCuts, yearsToInvest, returnRate, customMonthly, customOneTime, updateQuery]);
 
   const categoryStats = useMemo(() => {
     const expenses = transactions.filter(t => t.type === 'expense');
@@ -169,7 +227,7 @@ export function ExpenseOptimizationWidget() {
                     placeholder="e.g. Car Loan"
                     className="w-full bg-slate-900 border border-slate-800 rounded-lg py-1.5 pl-6 pr-2 text-xs text-slate-200 focus:outline-none focus:border-rose-500/50"
                     value={customMonthly === 0 ? '' : customMonthly}
-                    onChange={(e) => setCustomMonthly(Math.max(0, parseFloat(e.target.value) || 0))}
+                    onChange={(e) => setCustomMonthly(parseFloat(e.target.value) || 0)}
                   />
                 </div>
               </div>
@@ -182,7 +240,7 @@ export function ExpenseOptimizationWidget() {
                     placeholder="e.g. Down Payment"
                     className="w-full bg-slate-900 border border-slate-800 rounded-lg py-1.5 pl-6 pr-2 text-xs text-slate-200 focus:outline-none focus:border-rose-500/50"
                     value={customOneTime === 0 ? '' : customOneTime}
-                    onChange={(e) => setCustomOneTime(Math.max(0, parseFloat(e.target.value) || 0))}
+                    onChange={(e) => setCustomOneTime(parseFloat(e.target.value) || 0)}
                   />
                 </div>
               </div>
@@ -196,7 +254,7 @@ export function ExpenseOptimizationWidget() {
                   className="w-full bg-slate-900 border border-slate-800 rounded-lg py-1.5 px-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
                   value={yearsToInvest === 0 ? '' : yearsToInvest}
                   placeholder="0"
-                  onChange={(e) => setYearsToInvest(Math.max(1, parseInt(e.target.value) || 1))}
+                  onChange={(e) => setYearsToInvest(Math.max(1, parseInt(e.target.value) || 0))}
                 />
               </div>
               <div>
@@ -234,5 +292,13 @@ export function ExpenseOptimizationWidget() {
         </div>
       </div>
     </div>
+  );
+}
+
+export function ExpenseOptimizationWidget() {
+  return (
+    <Suspense fallback={<div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800/50 h-64 animate-pulse" />}>
+      <ExpenseOptimizationContent />
+    </Suspense>
   );
 }

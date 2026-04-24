@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, Suspense, useRef } from 'react';
+import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useFinancial } from '../context/FinancialContext';
 import { cn } from '../lib/utils';
 import { XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ReferenceLine, Label } from 'recharts';
@@ -15,40 +16,115 @@ const FREQUENCIES = {
 
 type Frequency = keyof typeof FREQUENCIES;
 
-export function CompoundInterestWidget() {
+function CompoundInterestContent() {
   const { stats } = useFinancial();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Helper to update URL params with debounce
+  const updateQuery = useCallback((params: Record<string, string | number | boolean | null>) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+
+    timerRef.current = setTimeout(() => {
+      const current = new URLSearchParams(Array.from(searchParams.entries()));
+      let hasChanged = false;
+      
+      Object.entries(params).forEach(([key, value]) => {
+        const stringValue = (value === null || value === undefined || value === false || value === '') ? null : String(value);
+        if (current.get(key) !== stringValue) {
+          if (stringValue === null) {
+            current.delete(key);
+          } else {
+            current.set(key, stringValue);
+          }
+          hasChanged = true;
+        }
+      });
+
+      if (hasChanged) {
+        const query = current.toString();
+        const url = query ? `${pathname}?${query}` : pathname;
+        router.replace(url, { scroll: false });
+      }
+    }, 500);
+  }, [searchParams, router, pathname]);
+
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
 
   // Core Investment State
-  const [initialPrincipal, setInitialPrincipal] = useState<number>(10000);
-  const [years, setYears] = useState<number>(30);
+  const [initialPrincipal, setInitialPrincipal] = useState<number>(() => Number(searchParams.get('p')) || 10000);
+  const [years, setYears] = useState<number>(() => Number(searchParams.get('y')) || 30);
   
   // Use a state for manual override, but calculate current effective contribution years
-  const [manualContributionYears, setManualContributionYears] = useState<number | null>(null);
-  const contributionYears = manualContributionYears !== null ? Math.min(years, manualContributionYears) : years;
+  const [manualContributionYears, setManualContributionYears] = useState<number | null>(() => {
+    const val = searchParams.get('cy');
+    return val !== null ? Number(val) : null;
+  });
+  
+  const contributionYears = useMemo(() => {
+    const y = years || 0;
+    const cy = manualContributionYears !== null ? manualContributionYears : y;
+    return Math.min(y, cy);
+  }, [years, manualContributionYears]);
 
-  const [returnRate, setReturnRate] = useState<number>(7);
+  const [returnRate, setReturnRate] = useState<number>(() => {
+    const val = searchParams.get('r');
+    return val !== null ? Number(val) : 7;
+  });
   
   // Use a state for manual override, but sync with stats if not edited
-  const [manualBaseContribution, setManualBaseContribution] = useState<number | null>(null);
+  const [manualBaseContribution, setManualBaseContribution] = useState<number | null>(() => {
+    const val = searchParams.get('c');
+    return val !== null ? Number(val) : null;
+  });
   const baseContribution = manualBaseContribution !== null ? manualBaseContribution : Math.round(stats.totalBalance * 100) / 100;
 
-  const [frequency, setFrequency] = useState<Frequency>('monthly');
+  const [frequency, setFrequency] = useState<Frequency>(() => (searchParams.get('f') as Frequency) || 'monthly');
   const [yearlyOverrides, setYearlyOverrides] = useState<Record<number, number>>({});
 
   // FIRE State
-  const [targetAnnualSpend, setTargetAnnualSpend] = useState<number>(100000);
-  const [swr, setSwr] = useState<number>(4);
-  const [showFireCalc, setShowFireCalc] = useState(false);
+  const [targetAnnualSpend, setTargetAnnualSpend] = useState<number>(() => Number(searchParams.get('tas')) || 100000);
+  const [swr, setSwr] = useState<number>(() => {
+    const val = searchParams.get('swr');
+    return val !== null ? Number(val) : 4;
+  });
+  const [showFireCalc, setShowFireCalc] = useState(() => searchParams.get('fire') === 'true');
+
+  // Sync state changes to URL
+  useEffect(() => {
+    updateQuery({
+      p: initialPrincipal,
+      y: years,
+      cy: manualContributionYears,
+      r: returnRate,
+      c: manualBaseContribution,
+      f: frequency,
+      tas: targetAnnualSpend,
+      swr: swr,
+      fire: showFireCalc
+    });
+  }, [initialPrincipal, years, manualContributionYears, returnRate, manualBaseContribution, frequency, targetAnnualSpend, swr, showFireCalc, updateQuery]);
 
   // UI State
   const [showYearlyAdjustments, setShowYearlyAdjustments] = useState(false);
 
   // Derived FIRE values
-  const fireNumber = useMemo(() => (targetAnnualSpend / (swr / 100)), [targetAnnualSpend, swr]);
+  const fireNumber = useMemo(() => {
+    const spend = targetAnnualSpend || 0;
+    const rate = swr || 4;
+    return (spend / (rate / 100));
+  }, [targetAnnualSpend, swr]);
 
   const chartData = useMemo(() => {
-    let currentBalance = Math.max(0, initialPrincipal);
-    let totalContributions = Math.max(0, initialPrincipal);
+    let currentBalance = Math.max(0, initialPrincipal || 0);
+    let totalContributions = Math.max(0, initialPrincipal || 0);
     const data = [];
 
     data.push({
@@ -58,14 +134,15 @@ export function CompoundInterestWidget() {
       interest: 0,
     });
 
-    const ratePerPeriod = returnRate / 100 / FREQUENCIES[frequency];
+    const safeYears = Math.max(1, years || 0);
+    const ratePerPeriod = (returnRate || 0) / 100 / FREQUENCIES[frequency];
 
-    for (let y = 1; y <= years; y++) {
+    for (let y = 1; y <= safeYears; y++) {
       const periodsThisYear = FREQUENCIES[frequency];
       
       // If we are past contribution years, contribution is 0
       const isContributing = y <= contributionYears;
-      const basePeriodic = isContributing ? baseContribution : 0;
+      const basePeriodic = isContributing ? (baseContribution || 0) : 0;
       const periodicContribution = yearlyOverrides[y] !== undefined ? yearlyOverrides[y] : basePeriodic;
       
       for (let p = 0; p < periodsThisYear; p++) {
@@ -88,11 +165,16 @@ export function CompoundInterestWidget() {
 
   const requiredContribution = useMemo(() => {
     const target = fireNumber;
-    const n = contributionYears * FREQUENCIES[frequency];
-    const r = returnRate / 100 / FREQUENCIES[frequency];
-    const p = Math.max(0, initialPrincipal);
+    const n = (contributionYears || 0) * FREQUENCIES[frequency];
+    const r = (returnRate || 0) / 100 / FREQUENCIES[frequency];
+    const p = Math.max(0, initialPrincipal || 0);
 
-    if (r === 0 || n === 0) return 0;
+    if (n === 0) return 0;
+    if (r === 0) {
+       // FV = P + n*c
+       // c = (FV - P) / n
+       return (target - p) / n;
+    }
 
     // FV of principal after contribution years
     const fvOfPrincipalAfterC = p * Math.pow(1 + r, n);
@@ -100,8 +182,8 @@ export function CompoundInterestWidget() {
     const denominator = (Math.pow(1 + r, n) - 1) / r;
     
     // Growth factor for years without contributions
-    const remainingYears = years - contributionYears;
-    const finalGrowthFactor = Math.pow(1 + (returnRate / 100), remainingYears);
+    const remainingYears = (years || 0) - (contributionYears || 0);
+    const finalGrowthFactor = Math.pow(1 + ((returnRate || 0) / 100), remainingYears);
     
     const adjustedTarget = target / finalGrowthFactor;
     const needed = (adjustedTarget - fvOfPrincipalAfterC) / denominator;
@@ -157,7 +239,7 @@ export function CompoundInterestWidget() {
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 pl-9 pr-3 text-slate-200 focus:outline-none focus:border-indigo-500"
                   value={initialPrincipal === 0 ? '' : initialPrincipal}
                   placeholder="0"
-                  onChange={(e) => setInitialPrincipal(parseFloat(e.target.value) || 0)}
+                  onChange={(e) => setInitialPrincipal(e.target.value === '' ? 0 : parseFloat(e.target.value))}
                 />
               </div>
             </div>
@@ -174,7 +256,7 @@ export function CompoundInterestWidget() {
                     value={returnRate === 0 ? '' : returnRate}
                     placeholder="0"
                     step="0.1"
-                    onChange={(e) => setReturnRate(parseFloat(e.target.value) || 0)}
+                    onChange={(e) => setReturnRate(e.target.value === '' ? 0 : parseFloat(e.target.value))}
                   />
                 </div>
               </div>
@@ -182,11 +264,11 @@ export function CompoundInterestWidget() {
                 <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Total Years</label>
                 <input 
                   type="number" 
-                  min="1"
+                  min="0"
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 focus:outline-none focus:border-indigo-500"
                   value={years === 0 ? '' : years}
                   placeholder="0"
-                  onChange={(e) => setYears(Math.max(1, parseFloat(e.target.value) || 0))}
+                  onChange={(e) => setYears(e.target.value === '' ? 0 : parseFloat(e.target.value))}
                 />
               </div>
             </div>
@@ -198,11 +280,11 @@ export function CompoundInterestWidget() {
                 <input 
                   type="number" 
                   min="0"
-                  max={years}
+                  max={years || 0}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 pl-9 pr-3 text-slate-200 focus:outline-none focus:border-indigo-500"
                   value={contributionYears === 0 ? '' : contributionYears}
                   placeholder="0"
-                  onChange={(e) => setManualContributionYears(Math.min(years, Math.max(0, parseFloat(e.target.value) || 0)))}
+                  onChange={(e) => setManualContributionYears(e.target.value === '' ? 0 : parseFloat(e.target.value))}
                 />
               </div>
               <p className="text-[10px] text-slate-500 mt-1 italic">Stop contributions after year {contributionYears}</p>
@@ -219,7 +301,7 @@ export function CompoundInterestWidget() {
                     value={baseContribution === 0 ? '' : baseContribution}
                     placeholder="0"
                     onChange={(e) => {
-                      setManualBaseContribution(parseFloat(e.target.value) || 0);
+                      setManualBaseContribution(e.target.value === '' ? 0 : parseFloat(e.target.value));
                     }}
                   />
                 </div>
@@ -253,7 +335,7 @@ export function CompoundInterestWidget() {
                     className="w-full bg-slate-950 border border-slate-800 rounded-lg py-1.5 pl-8 pr-3 text-sm text-slate-200 focus:outline-none focus:border-orange-500/50"
                     value={targetAnnualSpend === 0 ? '' : targetAnnualSpend}
                     placeholder="0"
-                    onChange={(e) => setTargetAnnualSpend(parseFloat(e.target.value) || 0)}
+                    onChange={(e) => setTargetAnnualSpend(e.target.value === '' ? 0 : parseFloat(e.target.value))}
                   />
                 </div>
               </div>
@@ -263,12 +345,12 @@ export function CompoundInterestWidget() {
                   <Percent size={12} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500" />
                   <input 
                     type="number" 
-                    min="0.1"
+                    min="0"
                     step="0.1"
                     className="w-full bg-slate-950 border border-slate-800 rounded-lg py-1.5 px-3 text-sm text-slate-200 focus:outline-none focus:border-orange-500/50"
                     value={swr === 0 ? '' : swr}
                     placeholder="0"
-                    onChange={(e) => setSwr(parseFloat(e.target.value) || 0)}
+                    onChange={(e) => setSwr(e.target.value === '' ? 0.1 : parseFloat(e.target.value))}
                   />
                 </div>
               </div>
@@ -296,7 +378,7 @@ export function CompoundInterestWidget() {
                 <div className="flex justify-end mb-2">
                   <button onClick={clearOverrides} className="text-xs text-slate-500 hover:text-rose-400 transition-colors">Clear All</button>
                 </div>
-                {Array.from({ length: years }).map((_, i) => {
+                {Array.from({ length: years || 1 }).map((_, i) => {
                   const year = i + 1;
                   const isOverridden = yearlyOverrides[year] !== undefined;
                   const isPostRetirement = year > contributionYears;
@@ -331,13 +413,13 @@ export function CompoundInterestWidget() {
         <div className="lg:col-span-2 flex flex-col gap-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800">
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Projected {years}y Balance</p>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Projected {years || 0}y Balance</p>
               <h4 className="text-2xl font-black text-emerald-400">{formatCurrency(chartData[chartData.length - 1]?.balance || 0)}</h4>
               <p className="text-xs text-slate-500 mt-1">Interest: <span className="text-indigo-400">+{formatCurrency(chartData[chartData.length - 1]?.interest || 0)}</span></p>
             </div>
             {showFireCalc && (
               <div className="bg-orange-500/5 p-4 rounded-2xl border border-orange-500/20">
-                <p className="text-[10px] font-bold text-orange-500/60 uppercase tracking-widest mb-1">Required to hit FIRE in {years}y</p>
+                <p className="text-[10px] font-bold text-orange-500/60 uppercase tracking-widest mb-1">Required to hit FIRE in {years || 0}y</p>
                 <h4 className="text-2xl font-black text-orange-400">{formatCurrency(requiredContribution)}</h4>
                 <p className="text-xs text-slate-500 mt-1">per <span className="text-slate-400">{frequency.replace('ly', '')}</span> (for {contributionYears}y)</p>
               </div>
@@ -370,7 +452,7 @@ export function CompoundInterestWidget() {
                 <Area type="monotone" dataKey="contributions" name="Principal & Contributions" stroke="#6366f1" strokeWidth={2} fillOpacity={1} fill="url(#colorContributions)" />
                 <Area type="monotone" dataKey="balance" name="Total Balance" stroke="#34d399" strokeWidth={2} fillOpacity={1} fill="url(#colorBalance)" />
                 
-                {contributionYears < years && (
+                {contributionYears > 0 && contributionYears < (years || 0) && (
                   <ReferenceLine x={contributionYears} stroke="#475569" strokeDasharray="3 3">
                     <Label position="top" value="Retire" fill="#475569" fontSize={10} fontWeight="bold" />
                   </ReferenceLine>
@@ -393,5 +475,13 @@ export function CompoundInterestWidget() {
         </div>
       </div>
     </div>
+  );
+}
+
+export function CompoundInterestWidget() {
+  return (
+    <Suspense fallback={<div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800/50 h-96 animate-pulse" />}>
+      <CompoundInterestContent />
+    </Suspense>
   );
 }
