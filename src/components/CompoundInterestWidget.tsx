@@ -5,7 +5,7 @@ import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useFinancial } from '../context/FinancialContext';
 import { cn } from '../lib/utils';
 import { XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ReferenceLine, Label } from 'recharts';
-import { Calculator, Settings, ChevronDown, ChevronUp, DollarSign, Target, Percent, Coffee } from 'lucide-react';
+import { Calculator, Settings, ChevronDown, ChevronUp, DollarSign, Target, Percent, Coffee, BarChart3, Table as TableIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const FREQUENCIES = {
   weekly: 52,
@@ -22,6 +22,10 @@ function CompoundInterestContent() {
   const router = useRouter();
   const pathname = usePathname();
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const [viewMode, setViewMode] = useState<'chart' | 'table'>('chart');
+  const [currentPage, setCurrentPage] = useState(0);
+  const itemsPerPage = 10;
 
   // Helper to update URL params with debounce
   const updateQuery = useCallback((params: Record<string, string | number | boolean | null>) => {
@@ -62,7 +66,6 @@ function CompoundInterestContent() {
   const [initialPrincipal, setInitialPrincipal] = useState<number>(() => Number(searchParams.get('p')) || 10000);
   const [years, setYears] = useState<number>(() => Number(searchParams.get('y')) || 30);
   
-  // Use a state for manual override, but calculate current effective contribution years
   const [manualContributionYears, setManualContributionYears] = useState<number | null>(() => {
     const val = searchParams.get('cy');
     return val !== null ? Number(val) : null;
@@ -79,7 +82,6 @@ function CompoundInterestContent() {
     return val !== null ? Number(val) : 7;
   });
   
-  // Use a state for manual override, but sync with stats if not edited
   const [manualBaseContribution, setManualBaseContribution] = useState<number | null>(() => {
     const val = searchParams.get('c');
     return val !== null ? Number(val) : null;
@@ -96,6 +98,11 @@ function CompoundInterestContent() {
     return val !== null ? Number(val) : 4;
   });
   const [showFireCalc, setShowFireCalc] = useState(() => searchParams.get('fire') === 'true');
+
+  // Reset page when years change
+  useEffect(() => {
+    setCurrentPage(0);
+  }, [years]);
 
   // Sync state changes to URL
   useEffect(() => {
@@ -115,7 +122,6 @@ function CompoundInterestContent() {
   // UI State
   const [showYearlyAdjustments, setShowYearlyAdjustments] = useState(false);
 
-  // Derived FIRE values
   const fireNumber = useMemo(() => {
     const spend = targetAnnualSpend || 0;
     const rate = swr || 4;
@@ -132,6 +138,7 @@ function CompoundInterestContent() {
       balance: currentBalance,
       contributions: totalContributions,
       interest: 0,
+      yearlyInterest: 0
     });
 
     const safeYears = Math.max(1, years || 0);
@@ -139,17 +146,29 @@ function CompoundInterestContent() {
 
     for (let y = 1; y <= safeYears; y++) {
       const periodsThisYear = FREQUENCIES[frequency];
-      
-      // If we are past contribution years, contribution is 0
       const isContributing = y <= contributionYears;
       const basePeriodic = isContributing ? (baseContribution || 0) : 0;
       const periodicContribution = yearlyOverrides[y] !== undefined ? yearlyOverrides[y] : basePeriodic;
       
+      let interestThisYear = 0;
       for (let p = 0; p < periodsThisYear; p++) {
         const interestThisPeriod = currentBalance * ratePerPeriod;
-        // Balance can be negative if withdrawals exceed interest+principal
-        currentBalance = Math.max(0, currentBalance + interestThisPeriod + periodicContribution);
-        totalContributions += periodicContribution;
+        interestThisYear += interestThisPeriod;
+        const balanceBeforePeriodic = currentBalance + interestThisPeriod;
+        currentBalance = Math.max(0, balanceBeforePeriodic + periodicContribution);
+        
+        if (periodicContribution >= 0) {
+          totalContributions += periodicContribution;
+        } else {
+          const withdrawalAmount = Math.abs(periodicContribution);
+          const currentInterestAccumulated = balanceBeforePeriodic - totalContributions;
+          if (currentInterestAccumulated > 0) {
+            const principalHit = Math.max(0, withdrawalAmount - currentInterestAccumulated);
+            totalContributions = Math.max(0, totalContributions - principalHit);
+          } else {
+            totalContributions = Math.max(0, totalContributions - withdrawalAmount);
+          }
+        }
       }
 
       data.push({
@@ -157,11 +176,20 @@ function CompoundInterestContent() {
         balance: Math.round(currentBalance),
         contributions: Math.round(totalContributions),
         interest: Math.round(Math.max(0, currentBalance - totalContributions)),
+        yearlyInterest: Math.round(interestThisYear)
       });
     }
-
     return data;
   }, [initialPrincipal, years, contributionYears, returnRate, baseContribution, frequency, yearlyOverrides]);
+
+  const paginatedData = useMemo(() => {
+    // Skip Year 0 for the table view
+    const tableData = chartData.slice(1);
+    const start = currentPage * itemsPerPage;
+    return tableData.slice(start, start + itemsPerPage);
+  }, [chartData, currentPage]);
+
+  const totalPages = Math.ceil((chartData.length - 1) / itemsPerPage);
 
   const requiredContribution = useMemo(() => {
     const target = fireNumber;
@@ -170,24 +198,14 @@ function CompoundInterestContent() {
     const p = Math.max(0, initialPrincipal || 0);
 
     if (n === 0) return 0;
-    if (r === 0) {
-       // FV = P + n*c
-       // c = (FV - P) / n
-       return (target - p) / n;
-    }
+    if (r === 0) return (target - p) / n;
 
-    // FV of principal after contribution years
     const fvOfPrincipalAfterC = p * Math.pow(1 + r, n);
-    // FV factor of contributions after contribution years
     const denominator = (Math.pow(1 + r, n) - 1) / r;
-    
-    // Growth factor for years without contributions
     const remainingYears = (years || 0) - (contributionYears || 0);
     const finalGrowthFactor = Math.pow(1 + ((returnRate || 0) / 100), remainingYears);
-    
     const adjustedTarget = target / finalGrowthFactor;
     const needed = (adjustedTarget - fvOfPrincipalAfterC) / denominator;
-    
     return Math.max(0, needed);
   }, [fireNumber, years, contributionYears, frequency, returnRate, initialPrincipal]);
 
@@ -199,13 +217,10 @@ function CompoundInterestContent() {
       return;
     }
     const val = parseFloat(amount);
-    if (!isNaN(val)) {
-      setYearlyOverrides({ ...yearlyOverrides, [year]: val });
-    }
+    if (!isNaN(val)) setYearlyOverrides({ ...yearlyOverrides, [year]: val });
   };
 
   const clearOverrides = () => setYearlyOverrides({});
-
   const formatCurrency = (val: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val);
 
   return (
@@ -217,13 +232,30 @@ function CompoundInterestContent() {
           </div>
           <h3 className="text-xl font-bold text-slate-100">Financial Growth & FIRE</h3>
         </div>
-        <button 
-          onClick={() => setShowFireCalc(!showFireCalc)}
-          className={`px-4 py-1.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${showFireCalc ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'}`}
-        >
-          <Target size={16} />
-          {showFireCalc ? 'Hide FIRE Goals' : 'Show FIRE Goals'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => setShowFireCalc(!showFireCalc)}
+            className={`px-4 py-1.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${showFireCalc ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'}`}
+          >
+            <Target size={16} />
+            {showFireCalc ? 'Hide FIRE Goals' : 'Show FIRE Goals'}
+          </button>
+          
+          <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800">
+            <button 
+              onClick={() => setViewMode('chart')}
+              className={cn("p-1.5 rounded-lg transition-all", viewMode === 'chart' ? "bg-indigo-600 text-white" : "text-slate-500 hover:text-slate-300")}
+            >
+              <BarChart3 size={18} />
+            </button>
+            <button 
+              onClick={() => setViewMode('table')}
+              className={cn("p-1.5 rounded-lg transition-all", viewMode === 'table' ? "bg-indigo-600 text-white" : "text-slate-500 hover:text-slate-300")}
+            >
+              <TableIcon size={18} />
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -300,9 +332,7 @@ function CompoundInterestContent() {
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 pl-9 pr-3 text-slate-200 focus:outline-none focus:border-indigo-500"
                     value={baseContribution === 0 ? '' : baseContribution}
                     placeholder="0"
-                    onChange={(e) => {
-                      setManualBaseContribution(e.target.value === '' ? 0 : parseFloat(e.target.value));
-                    }}
+                    onChange={(e) => setManualBaseContribution(e.target.value === '' ? 0 : parseFloat(e.target.value))}
                   />
                 </div>
                 <select 
@@ -383,7 +413,6 @@ function CompoundInterestContent() {
                   const isOverridden = yearlyOverrides[year] !== undefined;
                   const isPostRetirement = year > contributionYears;
                   const overrideVal = isOverridden ? yearlyOverrides[year] : 0;
-                  
                   return (
                     <div key={year} className="flex items-center justify-between gap-3 text-sm">
                       <span className={cn("text-slate-400 w-16", isPostRetirement && "text-slate-600 italic")}>Year {year}</span>
@@ -426,51 +455,81 @@ function CompoundInterestContent() {
             )}
           </div>
 
-          <div className="flex-1 min-h-[350px] bg-slate-950/30 p-4 rounded-2xl border border-slate-800/50 relative">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorBalance" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#34d399" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#34d399" stopOpacity={0}/>
-                  </linearGradient>
-                  <linearGradient id="colorContributions" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                <XAxis dataKey="year" stroke="#475569" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `Yr ${value}`} />
-                <YAxis stroke="#475569" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `$${value >= 1000 ? (value / 1000).toFixed(0) + 'k' : value}`} />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '0.75rem', color: '#f8fafc' }}
-                  itemStyle={{ fontSize: '0.875rem', fontWeight: 600 }}
-                  formatter={(value: any) => formatCurrency(Number(value || 0))}
-                  labelFormatter={(label) => `Year ${label}`}
-                />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '20px' }} />
-                <Area type="monotone" dataKey="contributions" name="Principal & Contributions" stroke="#6366f1" strokeWidth={2} fillOpacity={1} fill="url(#colorContributions)" />
-                <Area type="monotone" dataKey="balance" name="Total Balance" stroke="#34d399" strokeWidth={2} fillOpacity={1} fill="url(#colorBalance)" />
-                
-                {contributionYears > 0 && contributionYears < (years || 0) && (
-                  <ReferenceLine x={contributionYears} stroke="#475569" strokeDasharray="3 3">
-                    <Label position="top" value="Retire" fill="#475569" fontSize={10} fontWeight="bold" />
-                  </ReferenceLine>
+          <div className="flex-1 min-h-[350px] bg-slate-950/30 p-4 rounded-2xl border border-slate-800/50 flex flex-col overflow-hidden">
+            {viewMode === 'chart' ? (
+              <div className="flex-1">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorBalance" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#34d399" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#34d399" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="colorContributions" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                    <XAxis dataKey="year" stroke="#475569" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `Yr ${value}`} />
+                    <YAxis stroke="#475569" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `$${value >= 1000 ? (value / 1000).toFixed(0) + 'k' : value}`} />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '0.75rem', color: '#f8fafc' }}
+                      itemStyle={{ fontSize: '0.875rem', fontWeight: 600 }}
+                      formatter={(value: any) => formatCurrency(Number(value || 0))}
+                      labelFormatter={(label) => `Year ${label}`}
+                    />
+                    <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '20px' }} />
+                    <Area type="monotone" dataKey="contributions" name="Principal & Contributions" stroke="#6366f1" strokeWidth={2} fillOpacity={1} fill="url(#colorContributions)" />
+                    <Area type="monotone" dataKey="balance" name="Total Balance" stroke="#34d399" strokeWidth={2} fillOpacity={1} fill="url(#colorBalance)" />
+                    {contributionYears > 0 && contributionYears < (years || 0) && (
+                      <ReferenceLine x={contributionYears} stroke="#475569" strokeDasharray="3 3">
+                        <Label position="top" value="Retire" fill="#475569" fontSize={10} fontWeight="bold" />
+                      </ReferenceLine>
+                    )}
+                    {showFireCalc && <Area type="monotone" dataKey={() => fireNumber} stroke="#fb923c" strokeDasharray="5 5" strokeWidth={2} fill="none" name="FIRE Goal" />}
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <>
+                <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                  <table className="w-full text-left text-sm">
+                    <thead className="sticky top-0 bg-slate-950/90 backdrop-blur-sm z-10 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-800">
+                      <tr>
+                        <th className="py-3 px-2">Year</th>
+                        <th className="py-3 px-2">Yearly Int.</th>
+                        <th className="py-3 px-2">Total Int.</th>
+                        <th className="py-3 px-2 text-right">Total Balance</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/50">
+                      {paginatedData.map((row) => (
+                        <tr key={row.year} className="hover:bg-slate-800/20 transition-colors">
+                          <td className="py-3 px-2 font-bold text-slate-400">Yr {row.year}</td>
+                          <td className="py-3 px-2 text-indigo-400/80 font-mono">+{formatCurrency(row.yearlyInterest)}</td>
+                          <td className="py-3 px-2 text-indigo-400 font-mono">{formatCurrency(row.interest)}</td>
+                          <td className="py-3 px-2 text-right text-emerald-400 font-black font-mono">{formatCurrency(row.balance)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {totalPages > 1 && (
+                  <div className="mt-4 flex items-center justify-between p-2 border-t border-slate-800">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Page {currentPage + 1} of {totalPages}</p>
+                    <div className="flex gap-2">
+                      <button onClick={() => setCurrentPage(prev => Math.max(0, prev - 1))} disabled={currentPage === 0} className="p-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+                        <ChevronLeft size={16} />
+                      </button>
+                      <button onClick={() => setCurrentPage(prev => Math.min(totalPages - 1, prev + 1))} disabled={currentPage === totalPages - 1} className="p-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
+                  </div>
                 )}
-
-                {showFireCalc && (
-                  <Area
-                    type="monotone"
-                    dataKey={() => fireNumber}
-                    stroke="#fb923c"
-                    strokeDasharray="5 5"
-                    strokeWidth={2}
-                    fill="none"
-                    name="FIRE Goal"
-                  />
-                )}
-              </AreaChart>
-            </ResponsiveContainer>
+              </>
+            )}
           </div>
         </div>
       </div>
