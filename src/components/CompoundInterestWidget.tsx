@@ -93,7 +93,6 @@ function CompoundInterestContent() {
     const val = searchParams.get('rsy');
     return val !== null ? Number(val) : 30;
   });
-  const hasRetirementStartYear = retirementStartYear > 0;
 
   // Sync changes to URL
   useEffect(() => {
@@ -106,9 +105,9 @@ function CompoundInterestContent() {
       f: frequency,
       tas: targetAnnualSpend,
       swr: swr,
-      rsy: hasRetirementStartYear ? retirementStartYear : null
+      rsy: retirementStartYear
     });
-  }, [initialPrincipal, years, manualContributionYears, returnRate, manualBaseContribution, frequency, targetAnnualSpend, swr, retirementStartYear, hasRetirementStartYear, updateQuery]);
+  }, [initialPrincipal, years, manualContributionYears, returnRate, manualBaseContribution, frequency, targetAnnualSpend, swr, retirementStartYear, updateQuery]);
 
   useEffect(() => {
     setCurrentPage(0);
@@ -139,7 +138,7 @@ function CompoundInterestContent() {
     for (let y = 1; y <= safeYears; y++) {
       const periodsThisYear = FREQUENCIES[frequency];
       const isContributing = y <= contributionYears;
-      const isRetiring = hasRetirementStartYear && y >= retirementStartYear;
+      const isRetiring = y >= retirementStartYear;
       let basePeriodic = isContributing ? (baseContribution || 0) : 0;
       
       if (isRetiring && targetAnnualSpend > 0) {
@@ -178,7 +177,7 @@ function CompoundInterestContent() {
       });
     }
     return data;
-  }, [initialPrincipal, years, contributionYears, returnRate, baseContribution, frequency, yearlyOverrides, targetAnnualSpend, retirementStartYear, hasRetirementStartYear]);
+  }, [initialPrincipal, years, contributionYears, returnRate, baseContribution, frequency, yearlyOverrides, targetAnnualSpend, retirementStartYear]);
 
   const paginatedData = useMemo(() => {
     const tableData = chartData.slice(1);
@@ -341,17 +340,17 @@ function CompoundInterestContent() {
                   const isPostRetirement = year > contributionYears;
                   const overrideVal = isOverridden ? yearlyOverrides[year] : 0;
                   let placeholder = baseContribution.toString();
-                  if (hasRetirementStartYear && year >= retirementStartYear && targetAnnualSpend > 0) {
+                  if (year >= retirementStartYear && targetAnnualSpend > 0) {
                     placeholder = `-${(targetAnnualSpend/FREQUENCIES[frequency]).toFixed(0)}`;
                   } else if (isPostRetirement) {
                     placeholder = "0";
                   }
                   return (
                     <div key={year} className="flex items-center justify-between gap-3 text-sm">
-                      <span className={cn("text-slate-400 w-16", hasRetirementStartYear && year >= retirementStartYear && "text-rose-400/80 italic")}>Year {year}</span>
+                      <span className={cn("text-slate-400 w-16", year >= retirementStartYear && "text-rose-400/80 italic")}>Year {year}</span>
                       <div className="relative flex-1">
                         <DollarSign size={14} className={`absolute left-2 top-1/2 -translate-y-1/2 ${isOverridden ? 'text-indigo-400' : 'text-slate-600'}`} />
-                        <input type="number" placeholder={placeholder} value={isOverridden && overrideVal !== 0 ? overrideVal : (isOverridden && overrideVal === 0 ? '0' : '')} onChange={(e) => handleOverrideChange(year, e.target.value)} className={cn("w-full bg-slate-950 border rounded-lg py-1 pl-7 pr-2 focus:outline-none focus:border-indigo-500 text-sm", isOverridden ? "border-indigo-500 text-indigo-200" : "border-slate-800 text-slate-400", (isPostRetirement || (hasRetirementStartYear && year >= retirementStartYear)) && !isOverridden && "opacity-50")} />
+                        <input type="number" placeholder={placeholder} value={isOverridden && overrideVal !== 0 ? overrideVal : (isOverridden && overrideVal === 0 ? '0' : '')} onChange={(e) => handleOverrideChange(year, e.target.value)} className={cn("w-full bg-slate-950 border rounded-lg py-1 pl-7 pr-2 focus:outline-none focus:border-indigo-500 text-sm", isOverridden ? "border-indigo-500 text-indigo-200" : "border-slate-800 text-slate-400", (isPostRetirement || year >= retirementStartYear) && !isOverridden && "opacity-50")} />
                       </div>
                       <span className="text-xs text-slate-600 w-16 text-right">/{frequency.replace('ly', '')}</span>
                     </div>
