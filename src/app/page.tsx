@@ -21,7 +21,7 @@ function DashboardContent() {
               <span className="bg-indigo-600 px-3 py-1 rounded-xl shadow-lg shadow-indigo-600/20">M</span>
               MoneyHome
             </h1>
-            <p className="text-slate-500 mt-2 font-medium">Midnight Edition • AI-Powered Insights</p>
+            <p className="text-slate-500 mt-2 font-medium">Midnight Edition</p>
           </div>
           <div className="hidden md:block text-right">
             <p className="text-xs font-bold text-slate-600 uppercase tracking-widest">System Status</p>

@@ -217,6 +217,18 @@ function CompoundInterestContent() {
     if (!isNaN(val)) setYearlyOverrides({ ...yearlyOverrides, [year]: val });
   };
 
+  const handleRetirementStartYearChange = (value: string) => {
+    if (value === '') {
+      setRetirementStartYear(0);
+      return;
+    }
+
+    const parsed = parseFloat(value);
+    if (!isNaN(parsed)) {
+      setRetirementStartYear(Math.min(years || 30, Math.max(1, parsed)));
+    }
+  };
+
   const clearOverrides = () => setYearlyOverrides({});
   const formatCurrency = (val: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val);
 
@@ -308,7 +320,7 @@ function CompoundInterestContent() {
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Retire Year</label>
-                  <input type="number" min="1" max={years} className="w-full bg-slate-950 border border-slate-800 rounded-lg py-1 pl-2 pr-2 text-sm text-slate-200 focus:outline-none focus:border-orange-500/50" value={retirementStartYear === 0 ? '' : retirementStartYear} placeholder="30" onChange={(e) => setRetirementStartYear(Math.min(years || 30, Math.max(1, parseFloat(e.target.value) || 1)))} />
+                  <input type="number" min="1" max={years} className="w-full bg-slate-950 border border-slate-800 rounded-lg py-1 pl-2 pr-2 text-sm text-slate-200 focus:outline-none focus:border-orange-500/50" value={retirementStartYear === 0 ? '' : retirementStartYear} placeholder="30" onChange={(e) => handleRetirementStartYearChange(e.target.value)} />
                 </div>
               </div>
             </div>
