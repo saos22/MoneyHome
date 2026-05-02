@@ -227,7 +227,7 @@ function ExpenseOptimizationContent() {
                     placeholder="e.g. Car Loan"
                     className="w-full bg-slate-900 border border-slate-800 rounded-lg py-1.5 pl-6 pr-2 text-xs text-slate-200 focus:outline-none focus:border-rose-500/50"
                     value={customMonthly === 0 ? '' : customMonthly}
-                    onChange={(e) => setCustomMonthly(parseFloat(e.target.value) || 0)}
+                    onChange={(e) => setCustomMonthly(e.target.value === '' ? 0 : parseFloat(e.target.value))}
                   />
                 </div>
               </div>
@@ -240,7 +240,7 @@ function ExpenseOptimizationContent() {
                     placeholder="e.g. Down Payment"
                     className="w-full bg-slate-900 border border-slate-800 rounded-lg py-1.5 pl-6 pr-2 text-xs text-slate-200 focus:outline-none focus:border-rose-500/50"
                     value={customOneTime === 0 ? '' : customOneTime}
-                    onChange={(e) => setCustomOneTime(parseFloat(e.target.value) || 0)}
+                    onChange={(e) => setCustomOneTime(e.target.value === '' ? 0 : parseFloat(e.target.value))}
                   />
                 </div>
               </div>
@@ -254,7 +254,11 @@ function ExpenseOptimizationContent() {
                   className="w-full bg-slate-900 border border-slate-800 rounded-lg py-1.5 px-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
                   value={yearsToInvest === 0 ? '' : yearsToInvest}
                   placeholder="0"
-                  onChange={(e) => setYearsToInvest(Math.max(1, parseInt(e.target.value) || 0))}
+                  onChange={(e) => {
+                    if (e.target.value === '') { setYearsToInvest(0); return; }
+                    const val = parseFloat(e.target.value);
+                    if (val <= 100) setYearsToInvest(val);
+                  }}
                 />
               </div>
               <div>
@@ -266,7 +270,11 @@ function ExpenseOptimizationContent() {
                     className="w-full bg-slate-900 border border-slate-800 rounded-lg py-1.5 px-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
                     value={returnRate === 0 ? '' : returnRate}
                     placeholder="0"
-                    onChange={(e) => setReturnRate(parseFloat(e.target.value) || 0)}
+                    onChange={(e) => {
+                        if (e.target.value === '') { setReturnRate(0); return; }
+                        const val = parseFloat(e.target.value);
+                        if (val <= 100) setReturnRate(val);
+                    }}
                   />
                 </div>
               </div>

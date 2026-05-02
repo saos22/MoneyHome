@@ -94,6 +94,13 @@ function CompoundInterestContent() {
     return val !== null ? Number(val) : 30;
   });
 
+  // Derived FIRE values
+  const fireNumber = useMemo(() => {
+    const spend = targetAnnualSpend || 0;
+    const rate = swr || 4;
+    return (spend / (rate / 100));
+  }, [targetAnnualSpend, swr]);
+
   // Sync changes to URL
   useEffect(() => {
     updateQuery({
@@ -105,19 +112,13 @@ function CompoundInterestContent() {
       f: frequency,
       tas: targetAnnualSpend,
       swr: swr,
-      rsy: retirementStartYear
+      rsy: retirementStartYear > 0 ? retirementStartYear : null
     });
   }, [initialPrincipal, years, manualContributionYears, returnRate, manualBaseContribution, frequency, targetAnnualSpend, swr, retirementStartYear, updateQuery]);
 
   useEffect(() => {
     setCurrentPage(0);
   }, [years]);
-
-  const fireNumber = useMemo(() => {
-    const spend = targetAnnualSpend || 0;
-    const rate = swr || 4;
-    return (spend / (rate / 100));
-  }, [targetAnnualSpend, swr]);
 
   const chartData = useMemo(() => {
     let currentBalance = Math.max(0, initialPrincipal || 0);
@@ -129,7 +130,8 @@ function CompoundInterestContent() {
       balance: currentBalance,
       contributions: totalContributions,
       interest: 0,
-      yearlyInterest: 0
+      yearlyInterest: 0,
+      fireGoal: Math.round(fireNumber)
     });
 
     const safeYears = Math.max(1, years || 0);
@@ -138,10 +140,10 @@ function CompoundInterestContent() {
     for (let y = 1; y <= safeYears; y++) {
       const periodsThisYear = FREQUENCIES[frequency];
       const isContributing = y <= contributionYears;
-      const isRetiring = y >= retirementStartYear;
+      const isDrawdownActive = retirementStartYear > 0 && y >= retirementStartYear;
       let basePeriodic = isContributing ? (baseContribution || 0) : 0;
       
-      if (isRetiring && targetAnnualSpend > 0) {
+      if (isDrawdownActive && targetAnnualSpend > 0) {
         const drawdownPerPeriod = -(targetAnnualSpend / periodsThisYear);
         basePeriodic = drawdownPerPeriod;
       }
@@ -171,13 +173,14 @@ function CompoundInterestContent() {
       data.push({
         year: y,
         balance: Math.round(currentBalance),
-        contributions: Math.round(Math.max(0, totalContributions)),
+        contributions: Math.round(totalContributions),
         interest: Math.round(Math.max(0, currentBalance - totalContributions)),
-        yearlyInterest: Math.round(interestThisYear)
+        yearlyInterest: Math.round(interestThisYear),
+        fireGoal: Math.round(fireNumber)
       });
     }
     return data;
-  }, [initialPrincipal, years, contributionYears, returnRate, baseContribution, frequency, yearlyOverrides, targetAnnualSpend, retirementStartYear]);
+  }, [initialPrincipal, years, contributionYears, returnRate, baseContribution, frequency, yearlyOverrides, targetAnnualSpend, retirementStartYear, fireNumber]);
 
   const paginatedData = useMemo(() => {
     const tableData = chartData.slice(1);
@@ -189,7 +192,7 @@ function CompoundInterestContent() {
 
   const requiredContribution = useMemo(() => {
     const target = fireNumber;
-    const targetYear = Math.max(1, retirementStartYear || years || 1);
+    const targetYear = Math.max(1, (retirementStartYear > 0 ? retirementStartYear : years) || 1);
     const n = Math.min(targetYear, contributionYears || 0) * FREQUENCIES[frequency];
     const r = (returnRate || 0) / 100 / FREQUENCIES[frequency];
     const p = Math.max(0, initialPrincipal || 0);
@@ -215,18 +218,6 @@ function CompoundInterestContent() {
     }
     const val = parseFloat(amount);
     if (!isNaN(val)) setYearlyOverrides({ ...yearlyOverrides, [year]: val });
-  };
-
-  const handleRetirementStartYearChange = (value: string) => {
-    if (value === '') {
-      setRetirementStartYear(0);
-      return;
-    }
-
-    const parsed = parseFloat(value);
-    if (!isNaN(parsed)) {
-      setRetirementStartYear(Math.min(years || 30, Math.max(1, parsed)));
-    }
   };
 
   const clearOverrides = () => setYearlyOverrides({});
@@ -265,12 +256,20 @@ function CompoundInterestContent() {
                 <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Return Rate (%)</label>
                 <div className="relative">
                   <Percent size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                  <input type="number" min="0" className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 focus:outline-none focus:border-indigo-500" value={returnRate === 0 ? '' : returnRate} placeholder="0" step="0.1" onChange={(e) => setReturnRate(e.target.value === '' ? 0 : parseFloat(e.target.value))} />
+                  <input type="number" min="0" max="100" className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 focus:outline-none focus:border-indigo-500" value={returnRate === 0 ? '' : returnRate} placeholder="0" step="0.1" onChange={(e) => {
+                    if (e.target.value === '') { setReturnRate(0); return; }
+                    const val = parseFloat(e.target.value);
+                    if (val <= 100) setReturnRate(val);
+                  }} />
                 </div>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Total Years</label>
-                <input type="number" min="0" className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 focus:outline-none focus:border-indigo-500" value={years === 0 ? '' : years} placeholder="0" onChange={(e) => setYears(e.target.value === '' ? 0 : parseFloat(e.target.value))} />
+                <input type="number" min="0" max="100" className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-slate-200 focus:outline-none focus:border-indigo-500" value={years === 0 ? '' : years} placeholder="0" onChange={(e) => {
+                    if (e.target.value === '') { setYears(0); return; }
+                    const val = parseFloat(e.target.value);
+                    if (val <= 100) setYears(val);
+                }} />
               </div>
             </div>
 
@@ -278,7 +277,11 @@ function CompoundInterestContent() {
               <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Contribution Years</label>
               <div className="relative">
                 <Coffee size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                <input type="number" min="0" max={years || 0} className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 pl-9 pr-3 text-slate-200 focus:outline-none focus:border-indigo-500" value={contributionYears === 0 ? '' : contributionYears} placeholder="0" onChange={(e) => setManualContributionYears(e.target.value === '' ? 0 : parseFloat(e.target.value))} />
+                <input type="number" min="0" max={years || 100} className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 pl-9 pr-3 text-slate-200 focus:outline-none focus:border-indigo-500" value={contributionYears === 0 ? '' : contributionYears} placeholder="0" onChange={(e) => {
+                    if (e.target.value === '') { setManualContributionYears(0); return; }
+                    const val = parseFloat(e.target.value);
+                    if (val <= 100) setManualContributionYears(val);
+                }} />
               </div>
             </div>
 
@@ -310,7 +313,11 @@ function CompoundInterestContent() {
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">SWR (%)</label>
-                  <input type="number" min="0.1" step="0.1" className="w-full bg-slate-950 border border-slate-800 rounded-lg py-1.5 px-3 text-sm text-slate-200 focus:outline-none focus:border-orange-500/50" value={swr === 0 ? '' : swr} placeholder="0" onChange={(e) => setSwr(parseFloat(e.target.value) || 0)} />
+                  <input type="number" min="0" step="0.1" className="w-full bg-slate-950 border border-slate-800 rounded-lg py-1.5 px-3 text-sm text-slate-200 focus:outline-none focus:border-orange-500/50" value={swr === 0 ? '' : swr} placeholder="0" onChange={(e) => {
+                    if (e.target.value === '') { setSwr(0); return; }
+                    const val = parseFloat(e.target.value);
+                    if (val <= 100) setSwr(val);
+                  }} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4 pt-2 border-t border-orange-500/10 items-center">
@@ -320,7 +327,11 @@ function CompoundInterestContent() {
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Retire Year</label>
-                  <input type="number" min="1" max={years} className="w-full bg-slate-950 border border-slate-800 rounded-lg py-1 pl-2 pr-2 text-sm text-slate-200 focus:outline-none focus:border-orange-500/50" value={retirementStartYear === 0 ? '' : retirementStartYear} placeholder="30" onChange={(e) => handleRetirementStartYearChange(e.target.value)} />
+                  <input type="number" min="0" max={years || 100} className="w-full bg-slate-950 border border-slate-800 rounded-lg py-1 pl-2 pr-2 text-sm text-slate-200 focus:outline-none focus:border-orange-500/50" value={retirementStartYear === 0 ? '' : retirementStartYear} placeholder="0" onChange={(e) => {
+                    if (e.target.value === '') { setRetirementStartYear(0); return; }
+                    const val = parseFloat(e.target.value);
+                    if (val <= 100) setRetirementStartYear(val);
+                  }} />
                 </div>
               </div>
             </div>
@@ -334,23 +345,26 @@ function CompoundInterestContent() {
             {showYearlyAdjustments && (
               <div className="mt-4 space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
                 <div className="flex justify-end mb-2"><button onClick={clearOverrides} className="text-xs text-slate-500 hover:text-rose-400 transition-colors">Clear All</button></div>
-                {Array.from({ length: years || 1 }).map((_, i) => {
+                {Array.from({ length: Math.max(1, years || 0) }).map((_, i) => {
                   const year = i + 1;
                   const isOverridden = yearlyOverrides[year] !== undefined;
                   const isPostRetirement = year > contributionYears;
                   const overrideVal = isOverridden ? yearlyOverrides[year] : 0;
+                  const isDrawdownActive = retirementStartYear > 0 && year >= retirementStartYear;
+                  
                   let placeholder = baseContribution.toString();
-                  if (year >= retirementStartYear && targetAnnualSpend > 0) {
+                  if (isDrawdownActive && targetAnnualSpend > 0) {
                     placeholder = `-${(targetAnnualSpend/FREQUENCIES[frequency]).toFixed(0)}`;
                   } else if (isPostRetirement) {
                     placeholder = "0";
                   }
+
                   return (
                     <div key={year} className="flex items-center justify-between gap-3 text-sm">
-                      <span className={cn("text-slate-400 w-16", year >= retirementStartYear && "text-rose-400/80 italic")}>Year {year}</span>
+                      <span className={cn("text-slate-400 w-16", isDrawdownActive && "text-rose-400/80 italic")}>Year {year}</span>
                       <div className="relative flex-1">
                         <DollarSign size={14} className={`absolute left-2 top-1/2 -translate-y-1/2 ${isOverridden ? 'text-indigo-400' : 'text-slate-600'}`} />
-                        <input type="number" placeholder={placeholder} value={isOverridden && overrideVal !== 0 ? overrideVal : (isOverridden && overrideVal === 0 ? '0' : '')} onChange={(e) => handleOverrideChange(year, e.target.value)} className={cn("w-full bg-slate-950 border rounded-lg py-1 pl-7 pr-2 focus:outline-none focus:border-indigo-500 text-sm", isOverridden ? "border-indigo-500 text-indigo-200" : "border-slate-800 text-slate-400", (isPostRetirement || year >= retirementStartYear) && !isOverridden && "opacity-50")} />
+                        <input type="number" placeholder={placeholder} value={isOverridden && overrideVal !== 0 ? overrideVal : (isOverridden && overrideVal === 0 ? '0' : '')} onChange={(e) => handleOverrideChange(year, e.target.value)} className={cn("w-full bg-slate-950 border rounded-lg py-1 pl-7 pr-2 focus:outline-none focus:border-indigo-500 text-sm", isOverridden ? "border-indigo-500 text-indigo-200" : "border-slate-800 text-slate-400", (isPostRetirement || isDrawdownActive) && !isOverridden && "opacity-50")} />
                       </div>
                       <span className="text-xs text-slate-600 w-16 text-right">/{frequency.replace('ly', '')}</span>
                     </div>
@@ -369,31 +383,44 @@ function CompoundInterestContent() {
               <p className="text-xs text-slate-500 mt-1">Interest: <span className="text-indigo-400">+{formatCurrency(chartData[chartData.length - 1]?.interest || 0)}</span></p>
             </div>
             <div className="bg-orange-500/5 p-4 rounded-2xl border border-orange-500/20">
-              <p className="text-[10px] font-bold text-orange-500/60 uppercase tracking-widest mb-1">Required to hit FIRE by Yr {retirementStartYear || years}</p>
+              <p className="text-[10px] font-bold text-orange-500/60 uppercase tracking-widest mb-1">Required to hit FIRE by Yr {retirementStartYear || years || 0}</p>
               <h4 className="text-2xl font-black text-orange-400">{formatCurrency(requiredContribution)}</h4>
               <p className="text-xs text-slate-500 mt-1">per <span className="text-slate-400">{frequency.replace('ly', '')}</span> (for {contributionYears}y)</p>
             </div>
           </div>
 
-          <div className="flex-1 min-h-[350px] bg-slate-950/30 p-4 rounded-2xl border border-slate-800/50 flex flex-col overflow-hidden">
+          <div className="flex-1 min-h-[450px] bg-slate-950/30 p-4 rounded-2xl border border-slate-800/50 flex flex-col overflow-hidden">
             {viewMode === 'chart' ? (
               <div className="flex-1">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                  <AreaChart data={chartData} margin={{ top: 30, right: 10, left: 10, bottom: 0 }}>
                     <defs>
                       <linearGradient id="colorBalance" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#34d399" stopOpacity={0.3}/><stop offset="95%" stopColor="#34d399" stopOpacity={0}/></linearGradient>
                       <linearGradient id="colorContributions" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/><stop offset="95%" stopColor="#6366f1" stopOpacity={0}/></linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
                     <XAxis dataKey="year" stroke="#475569" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `Yr ${value}`} />
-                    <YAxis stroke="#475569" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `$${value >= 1000 ? (value / 1000).toFixed(0) + 'k' : value}`} />
-                    <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '0.75rem', color: '#f8fafc' }} itemStyle={{ fontSize: '0.875rem', fontWeight: 600 }} formatter={(value: any) => formatCurrency(Number(value || 0))} labelFormatter={(label) => `Year ${label}`} />
+                    <YAxis 
+                      stroke="#475569" 
+                      fontSize={12} 
+                      tickLine={false} 
+                      axisLine={false} 
+                      domain={[0, (dataMax: number) => Math.max(dataMax, fireNumber * 1.1)]}
+                      tickFormatter={(value) => `$${value >= 1000 ? (value / 1000).toFixed(0) + 'k' : value}`} 
+                    />
+                    <Tooltip 
+                        contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '0.75rem', color: '#f8fafc' }} 
+                        itemStyle={{ fontSize: '0.875rem', fontWeight: 600 }} 
+                        formatter={(value: any, name: string) => [formatCurrency(Number(value || 0)), name]}
+                        labelFormatter={(label) => `Year ${label}`} 
+                    />
                     <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '20px' }} />
                     <Area type="monotone" dataKey="contributions" name="Principal & Contributions" stroke="#6366f1" strokeWidth={2} fillOpacity={1} fill="url(#colorContributions)" />
                     <Area type="monotone" dataKey="balance" name="Total Balance" stroke="#34d399" strokeWidth={2} fillOpacity={1} fill="url(#colorBalance)" />
+                    <Area type="monotone" dataKey="fireGoal" name="FIRE Goal" stroke="#fb923c" strokeWidth={2} strokeDasharray="5 5" fill="none" />
+                    
                     {contributionYears > 0 && contributionYears < (years || 0) && (<ReferenceLine x={contributionYears} stroke="#475569" strokeDasharray="3 3"><Label position="top" value="Retire" fill="#475569" fontSize={10} fontWeight="bold" /></ReferenceLine>)}
-                    {retirementStartYear > 0 && retirementStartYear < (years || 0) && (<ReferenceLine x={retirementStartYear} stroke="#f43f5e" strokeDasharray="3 3"><Label position="top" value="Start Drawdown" fill="#f43f5e" fontSize={10} fontWeight="bold" /></ReferenceLine>)}
-                    <Area type="monotone" dataKey={() => fireNumber} stroke="#fb923c" strokeDasharray="5 5" strokeWidth={2} fill="none" name="FIRE Goal" />
+                    {retirementStartYear > 0 && retirementStartYear <= (years || 0) && (<ReferenceLine x={retirementStartYear} stroke="#f43f5e" strokeDasharray="3 3"><Label position="top" value="Start Drawdown" fill="#f43f5e" fontSize={10} fontWeight="bold" /></ReferenceLine>)}
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
