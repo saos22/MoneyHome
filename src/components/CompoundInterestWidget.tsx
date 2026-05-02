@@ -411,7 +411,7 @@ function CompoundInterestContent() {
                     <Tooltip 
                         contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '0.75rem', color: '#f8fafc' }} 
                         itemStyle={{ fontSize: '0.875rem', fontWeight: 600 }} 
-                        formatter={(value: any, name: string) => [formatCurrency(Number(value || 0)), name]}
+                        formatter={(value: any, name: any) => [formatCurrency(Number(value || 0)), String(name || '')]}
                         labelFormatter={(label) => `Year ${label}`} 
                     />
                     <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '20px' }} />
